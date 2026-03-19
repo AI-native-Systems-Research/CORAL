@@ -13,6 +13,10 @@
   <img src="assets/stanford.png" alt="Stanford" height="50">
 </p>
 
+**Ao Qu\*, Yihao Yan\*, Han Zheng\*, Zijian Zhou\*, Shao Yong Ong, Fenglu Hong, Jiacheng Zhu, Bryan Kian Hsiang Low‡, Jinhua Zhao‡, Paul Pu Liang‡**
+
+<sub>\* Equal Contribution &nbsp;&nbsp; ‡ Equal Advising</sub>
+
 [![Blog](https://img.shields.io/badge/Blog-CORAL-FF6B6B.svg?logo=hashnode&logoColor=white)](https://human-agent-society.github.io/CORAL/)
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?logo=python&logoColor=white)](https://python.org)
