@@ -1,49 +1,36 @@
 task:
-  name: "Frontier-CS Research: qknorm"
-  description: |
-    Solve the qknorm problem from the Frontier-CS Research benchmark.
-    Read the problem readme in `problems/qknorm/readme`.
-    Save your solution as `solutions/qknorm/solution.py`.
-
-    ## Solution format
-
-    Each solution must define a `Solution` class:
-    ```python
-    class Solution:
-        def solve(self, spec_path: str = None) -> dict:
-            # Return {"code": "your_code"} or {"program_path": "path/to/impl.py"}
-            pass
-    ```
-
-    The exact API varies by problem — check the readme for details.
+  name: 'Frontier-CS Research: qknorm'
+  description: "            Solve the 'qknorm' research problem from the Frontier-CS\
+    \ benchmark.\n            Read the full problem statement in `statement.md`.\n\
+    \n            Write your solution in `solution.py`.\nNOTE: This problem requires\
+    \ GPU (CUDA) for evaluation.\nDocker image: andylizf/triton-tlx:tlx-nv-cu122-nvcc\n\
+    \n            Your score will be 0-100 based on solution quality.\n"
   files:
-    - "solutions/"
-  seed:
-    - "solutions/"
-    - "problems/"
-  tips: |
-    - Your score is 0-100 based on solution quality.
-    - Invalid or failing solutions score 0.
-    - Some problems require GPU (Docker with --gpus).
-    - Problem readmes are in problems/qknorm/.
+  - solution.py
+  tips: '- Read statement.md carefully for the exact interface and scoring formula.
 
+    - Evaluation timeout: 1800s.
+
+    - Language: Python.
+
+    - GPU (CUDA) required for evaluation.'
 grader:
-  timeout: 1200
+  timeout: 1800
   direction: maximize
   args:
-    problems_dir: "/path/to/frontier-cs-research-problems"
-    problem_id: "qknorm"
-
+    problem_name: qknorm
+    variant_name: ''
+    variant_dir: /home/qua/Code/coral/fix/Frontier-CS/research/problems/qknorm
+    language: python
+    needs_gpu: true
 agents:
   count: 1
   runtime: claude_code
   model: claude-sonnet-4-6
   max_turns: 200
-
 workspace:
-  results_dir: "./results"
-  repo_path: "./examples/frontier_cs_research/qknorm/seed"
-
+  results_dir: ./results
+  repo_path: ./examples/frontier_cs_research/qknorm/seed
 run:
   verbose: false
   ui: false
