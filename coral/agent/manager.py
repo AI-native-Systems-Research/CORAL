@@ -50,7 +50,10 @@ logger = logging.getLogger(__name__)
 class AgentManager:
     """Manage the lifecycle of multiple CORAL agents."""
 
-    def __init__(self, config: CoralConfig, verbose: bool = False, config_dir: Path | None = None) -> None:
+    def __init__(
+        self, config: CoralConfig, verbose: bool = False,
+        config_dir: Path | None = None,
+    ) -> None:
         self.config = config
         self.config_dir = config_dir
         self.runtime: AgentRuntime = get_runtime(config.agents.runtime)
@@ -437,7 +440,11 @@ class AgentManager:
             prompt_source=prompt_source,
         )
 
-    def resume_all(self, paths: ProjectPaths, instruction: str | None = None) -> list[AgentHandle]:
+    def resume_all(
+        self,
+        paths: ProjectPaths,
+        instruction: str | None = None,
+    ) -> list[AgentHandle]:
         """Resume agents into an existing run's worktrees."""
         self._start_time = datetime.now(UTC)
         self.paths = paths
@@ -746,7 +753,14 @@ class AgentManager:
         signal.signal(signal.SIGTERM, _signal_handler)
         signal.signal(signal.SIGINT, _signal_handler)
 
-        seen_attempts = self._get_seen_attempts()
+        # Only mark already-scored attempts as "seen" at startup. Pending
+        # attempts left over from a previous manager (still in the grader
+        # queue or mid-grade when we came up) need to flow through the
+        # normal new-attempts path so heartbeat fires for them when they
+        # transition to scored. Without this, anything pending at the
+        # moment of a `coral resume` would silently bypass the per-eval
+        # interrupt-and-resume cycle for the rest of the run.
+        seen_attempts = self._filter_scored(self._get_seen_attempts())
 
         logger.info(f"Monitoring {len(self.handles)} agent(s) (check every {check_interval}s)...")
 
