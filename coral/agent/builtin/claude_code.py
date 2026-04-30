@@ -29,6 +29,36 @@ class ClaudeCodeRuntime:
     def extract_session_id(self, log_path: Path) -> str | None:
         return _extract_session_id(log_path)
 
+    def classify_exit(
+        self,
+        log_path: Path,
+        exit_code: int | None,
+        uptime_seconds: float | None,
+        min_clean_runtime_seconds: int = 60,
+    ) -> str:
+        """Classify a Claude Code subprocess exit.
+
+        Claude Code emits a `"type":"result"` line on normal session end
+        (including `max_turns` reached). That marker is the only reliable
+        signal of a healthy completion — uptime alone is not sufficient,
+        because a long-running session can still die unexpectedly mid-turn.
+
+        Returns:
+            "clean" only when exit_code == 0 AND the result marker is present.
+            "session_error" when the log shows a missing-session error.
+            "no_result" otherwise (the burst counter consumes this).
+        """
+        from coral.agent.exit_classifier import claude_code_has_result
+
+        # Avoid circular import: _log_has_session_error lives in manager.py.
+        from coral.agent.manager import _log_has_session_error
+
+        if exit_code == 0 and claude_code_has_result(log_path):
+            return "clean"
+        if _log_has_session_error(log_path):
+            return "session_error"
+        return "no_result"
+
     def start(
         self,
         worktree_path: Path,
@@ -107,6 +137,18 @@ class ClaudeCodeRuntime:
 
         log_file = open(log_path, "w", buffering=1)  # line-buffered
 
+        # Open per-agent stderr capture under public/diagnostics/<agent_id>/agent.err
+        # so stderr does not pollute the stream-json log. Falls back to STDOUT
+        # merge for non-managed contexts (tests, direct API users).
+        from coral.agent.process import open_agent_stderr_for_log_dir
+        err_path: Path | None = None
+        err_file: Any = None
+        stderr_target: Any = subprocess.STDOUT
+        opened = open_agent_stderr_for_log_dir(log_dir, agent_id)
+        if opened is not None:
+            err_path, err_file = opened
+            stderr_target = err_file
+
         # Write CORAL prompt entry so the initial instruction is captured in the log
         write_coral_log_entry(
             log_file,
@@ -119,12 +161,14 @@ class ClaudeCodeRuntime:
         )
 
         if verbose:
-            # Tee: write to both terminal and log file
+            # Tee: write to both terminal and log file. Stderr goes to its
+            # own file (when available); operators viewing crashes in real
+            # time can `tail -F` agent.err per the v1 release notes.
             process = subprocess.Popen(
                 cmd,
                 cwd=str(worktree_path),
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                stderr=stderr_target,
                 start_new_session=True,  # own process group for clean SIGINT
                 env=agent_env,
             )
@@ -161,7 +205,7 @@ class ClaudeCodeRuntime:
                 cmd,
                 cwd=str(worktree_path),
                 stdout=log_file,
-                stderr=subprocess.STDOUT,
+                stderr=stderr_target,
                 start_new_session=True,  # own process group for clean SIGINT
                 env=agent_env,
             )
@@ -176,4 +220,6 @@ class ClaudeCodeRuntime:
             log_path=log_path,
             session_id=resume_session_id,
             _log_file=log_file_ref,
+            err_file=err_file,
+            err_path=err_path,
         )

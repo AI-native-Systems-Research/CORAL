@@ -58,6 +58,22 @@ class OpenCodeRuntime:
     def extract_session_id(self, log_path: Path) -> str | None:
         return _extract_opencode_session_id(log_path)
 
+    def classify_exit(
+        self,
+        log_path: Path,
+        exit_code: int | None,
+        uptime_seconds: float | None,
+        min_clean_runtime_seconds: int = 60,
+    ) -> str:
+        """Classify an OpenCode subprocess exit using the uptime fallback.
+
+        OpenCode's log format does not yet include a stable terminal marker,
+        so we use the conservative uptime heuristic: `exit_code==0` is clean
+        only when the agent ran for at least `min_clean_runtime_seconds`.
+        """
+        from coral.agent.exit_classifier import classify_by_uptime
+        return classify_by_uptime(exit_code, uptime_seconds, min_clean_runtime_seconds)
+
     def start(
         self,
         worktree_path: Path,
@@ -132,6 +148,16 @@ class OpenCodeRuntime:
 
         log_file = open(log_path, "w", buffering=1)
 
+        # Per-agent stderr capture under public/diagnostics/<agent_id>/agent.err.
+        from coral.agent.process import open_agent_stderr_for_log_dir
+        err_path: Path | None = None
+        err_file: Any = None
+        stderr_target: Any = subprocess.STDOUT
+        opened = open_agent_stderr_for_log_dir(log_dir, agent_id)
+        if opened is not None:
+            err_path, err_file = opened
+            stderr_target = err_file
+
         write_coral_log_entry(
             log_file,
             prompt=prompt,
@@ -147,7 +173,7 @@ class OpenCodeRuntime:
                 cmd,
                 cwd=str(worktree_path),
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                stderr=stderr_target,
                 start_new_session=True,
                 env=agent_env,
             )
@@ -183,7 +209,7 @@ class OpenCodeRuntime:
                 cmd,
                 cwd=str(worktree_path),
                 stdout=log_file,
-                stderr=subprocess.STDOUT,
+                stderr=stderr_target,
                 start_new_session=True,
                 env=agent_env,
             )
@@ -198,4 +224,6 @@ class OpenCodeRuntime:
             log_path=log_path,
             session_id=resume_session_id,
             _log_file=log_file_ref,
+            err_file=err_file,
+            err_path=err_path,
         )
