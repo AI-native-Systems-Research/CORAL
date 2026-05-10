@@ -1,0 +1,18 @@
+{
+  "permission": {
+    "external_directory": "allow",
+    "question": "deny",
+    "bash": "allow",
+    "edit": "allow",
+    "read": "allow",
+    "write": "allow",
+    "webfetch": "deny",
+    "websearch": "deny"
+  },
+  "provider": {
+    "default": {
+      "name": "default",
+      "options": {}
+    }
+  }
+}
