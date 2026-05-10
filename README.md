@@ -57,6 +57,7 @@ Coral works with any coding agent that can run as a subprocess and interact via 
 | [**Claude Code**](https://github.com/anthropics/claude-code) | Anthropic's agentic coding tool — the default and most tested runtime |
 | [**Codex**](https://github.com/openai/codex) | OpenAI's open-source coding agent |
 | [**OpenCode**](https://github.com/opencode-ai/opencode) | Open-source terminal-based AI coding agent |
+| [**IBM Bob**](https://bob.ibm.com/) | AI-Powered Development Partne |
 
 > [!TIP]
 > Before using Coral, make sure you have fully set up the agent(s) you plan to use:
