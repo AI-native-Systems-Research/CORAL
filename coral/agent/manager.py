@@ -102,6 +102,10 @@ class AgentManager:
         self._gateway_keys: dict[str, str] = {}  # agent_id -> proxy key
         self._grader_proc: multiprocessing.Process | None = None
         self._grader_stop_event: Any | None = None  # multiprocessing.Event
+        # Per-agent runtime/model (populated in _setup_and_start_agent)
+        self._agent_runtimes: dict[str, AgentRuntime] = {}
+        self._agent_runtime_names: dict[str, str] = {}
+        self._agent_models: dict[str, str] = {}
 
     def start_all(self) -> list[AgentHandle]:
         """Create workspace structure and spawn all agents."""
@@ -127,7 +131,8 @@ class AgentManager:
             logger.info("Seeded global heartbeat config")
 
         # 3. Warm-start research phase (optional)
-        agent_ids = [f"agent-{i + 1}" for i in range(self.config.agents.count)]
+        agent_slots = self._build_agent_slots()
+        agent_ids = [slot[0] for slot in agent_slots]
         warmstart = WarmStartRunner(self.config, self.runtime.shared_dir_name)
         research_sessions: dict[str, str] = {}
 
@@ -136,12 +141,14 @@ class AgentManager:
 
         # 4. For each agent: create worktree, generate CLAUDE.md, spawn runtime
         handles = []
-        for i, agent_id in enumerate(agent_ids):
+        for i, (agent_id, runtime_name, model) in enumerate(agent_slots):
             if i > 0 and self.config.agents.stagger_seconds > 0:
                 logger.info(f"Staggering {agent_id} by {self.config.agents.stagger_seconds}s")
                 time.sleep(self.config.agents.stagger_seconds)
             handle = self._setup_and_start_agent(
                 agent_id,
+                runtime_name=runtime_name,
+                model=model,
                 resume_session_id=research_sessions.get(agent_id),
                 prompt=warmstart.main_prompt() if warmstart.enabled else None,
                 prompt_source="warmstart:main" if warmstart.enabled else None,
@@ -282,6 +289,18 @@ class AgentManager:
         self._gateway = gateway
         logger.info(f"Gateway running at {gateway.url}")
 
+    def _build_agent_slots(self) -> list[tuple[str, str, str]]:
+        """Return (agent_id, runtime_name, model) for each agent to spawn."""
+        slots: list[tuple[str, str, str]] = []
+        i = 0
+        for variant in self.config.agents.effective_variants():
+            rt = variant.runtime or self.config.agents.runtime
+            mdl = variant.model or self.config.agents.model
+            for _ in range(variant.count):
+                i += 1
+                slots.append((f"agent-{i}", rt, mdl))
+        return slots
+
     def _run_warmstart_research(
         self, warmstart: WarmStartRunner, agent_ids: list[str],
     ) -> dict[str, str]:
@@ -324,6 +343,8 @@ class AgentManager:
 
     def _setup_and_start_agent(
         self, agent_id: str,
+        runtime_name: str | None = None,
+        model: str | None = None,
         resume_session_id: str | None = None,
         prompt: str | None = None,
         prompt_source: str | None = None,
@@ -331,6 +352,14 @@ class AgentManager:
     ) -> AgentHandle:
         """Set up a single agent and start it."""
         assert self.paths is not None
+
+        # Resolve per-agent runtime and model
+        effective_runtime_name = runtime_name or self.config.agents.runtime
+        rt = get_runtime(effective_runtime_name) if runtime_name else self.runtime
+        effective_model = model or self.config.agents.model
+        self._agent_runtimes[agent_id] = rt
+        self._agent_runtime_names[agent_id] = effective_runtime_name
+        self._agent_models[agent_id] = effective_model
 
         # Create worktree (idempotent)
         logger.info(f"Setting up {agent_id}...")
@@ -349,7 +378,7 @@ class AgentManager:
         write_coral_dir(worktree_path, self.paths.coral_dir)
 
         # Set up shared state directory (notes, skills, attempts symlinks)
-        shared_dir_name = self.runtime.shared_dir_name
+        shared_dir_name = rt.shared_dir_name
         setup_shared_state(worktree_path, self.paths.coral_dir, shared_dir_name)
 
         # Register agent with gateway if active (before settings so we have the key)
@@ -392,8 +421,8 @@ class AgentManager:
         write_agent_id(worktree_path, agent_id)
 
         # Generate instruction file (CLAUDE.md, AGENTS.md, etc.)
-        instruction_file = self.runtime.instruction_filename
-        single_agent = self.config.agents.count == 1
+        instruction_file = rt.instruction_filename
+        single_agent = self.config.agents.effective_count() == 1
         coral_md = generate_coral_md(
             self.config, agent_id,
             single_agent=single_agent,
@@ -402,10 +431,10 @@ class AgentManager:
         (worktree_path / instruction_file).write_text(coral_md)
 
         # Start agent
-        handle = self.runtime.start(
+        handle = rt.start(
             worktree_path=worktree_path,
             coral_md_path=worktree_path / instruction_file,
-            model=self.config.agents.model,
+            model=effective_model,
             runtime_options=self.config.agents.runtime_options,
             max_turns=max_turns if max_turns is not None else self.config.agents.max_turns,
             verbose=self.verbose,
@@ -435,10 +464,11 @@ class AgentManager:
         old_handle.stop()
 
         # Check if the previous exit was a session-not-found error
+        rt = self._agent_runtimes.get(agent_id, self.runtime)
         session_id: str | None = None
         if not _log_has_session_error(old_handle.log_path):
             # Try to extract session_id from the old log for resumption
-            session_id = self.runtime.extract_session_id(old_handle.log_path)
+            session_id = rt.extract_session_id(old_handle.log_path)
 
         if session_id:
             logger.info(f"Resuming {agent_id} with session {session_id}")
@@ -446,7 +476,11 @@ class AgentManager:
             logger.info(f"Starting {agent_id} fresh (no session to resume)")
 
         return self._setup_and_start_agent(
-            agent_id, resume_session_id=session_id, prompt=prompt,
+            agent_id,
+            runtime_name=self._agent_runtime_names.get(agent_id),
+            model=self._agent_models.get(agent_id),
+            resume_session_id=session_id,
+            prompt=prompt,
             prompt_source=prompt_source or "restart",
         )
 
@@ -468,7 +502,11 @@ class AgentManager:
             logger.warning(f"No session_id for {agent_id}, starting fresh")
 
         return self._setup_and_start_agent(
-            agent_id, resume_session_id=session_id, prompt=prompt,
+            agent_id,
+            runtime_name=self._agent_runtime_names.get(agent_id),
+            model=self._agent_models.get(agent_id),
+            resume_session_id=session_id,
+            prompt=prompt,
             prompt_source=prompt_source,
         )
 

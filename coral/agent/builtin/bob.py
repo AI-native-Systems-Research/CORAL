@@ -63,15 +63,16 @@ class BobRuntime:
         if prompt is None:
             prompt = "Begin."
 
-        # Bob command: bob --yolo -o text < BOB.md
+        # Bob command: bob --yolo -o text [-m model] < BOB.md
         # --yolo: auto-approve all actions (similar to dangerously-skip-permissions)
         # -o text: output format as text
-        # Note: Bob picks its own model, so we don't pass --model flag
         cmd = [
             "bob",
             "--yolo",
             "-o", "text",
         ]
+        if model and model != "auto":
+            cmd += ["-m", model]
 
         logger.info(f"Starting Bob agent {agent_id} in {worktree_path}")
         logger.info(f"Command: {' '.join(cmd)} < {coral_md_path}")

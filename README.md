@@ -72,10 +72,34 @@ Set the agent in your task config (refer to <a href="#3-configure-the-task">Conf
 
 ```yaml
 agents:
-  runtime: claude_code   # or "codex" or "opencode"
+  runtime: claude_code   # or "codex", "opencode", "bob"
   count: 3  # how many agents you want to spawn. Beware of your budget :)
   model: opus   # name of the model you wish to use
 ```
+
+To run **multiple runtimes or models in the same experiment**, use `agents.variants` instead of `agents.count`:
+
+```yaml
+agents:
+  runtime: claude_code  # default runtime for variants that don't specify one
+  variants:
+    # Two Claude Code agents on opus
+    - model: opus
+      count: 2
+    # Two Claude Code agents on sonnet
+    - model: sonnet
+      count: 2
+    # One OpenAI Codex agent (different runtime entirely)
+    - runtime: codex
+      model: gpt-5
+      count: 1
+    # One IBM Bob agent on a different model
+    - runtime: bob
+      model: mistral-medium-3.1
+      count: 1
+```
+
+Each variant spawns `count` agents with its own runtime and model. The top-level `runtime` and `model` fields act as defaults for any variant that omits them. The old `count` / `runtime` / `model` fields still work unchanged — no migration needed.
 
 ### Usage
 
@@ -397,7 +421,8 @@ Ready-to-run task configurations in `examples/`:
 
 | Task                       | Domain       | Description                                                 |
 | -------------------------- | ------------ | ----------------------------------------------------------- |
-| **circle_packing**         | Optimization | Pack 26 circles into a unit square to maximize sum of radii |
+| **circle_packing**         | Optimization | Pack 26 circles into a unit square to maximize sum of radii (OpenCode + gateway) |
+| **circle_packing_bob**     | Optimization | Same task with IBM Bob runtime; mixed premium + OSS model variants |
 | **erdos**                  | Mathematics  | Solve a math conjecture                                     |
 | **kernel_builder**         | Systems      | VLIW SIMD kernel optimization                               |
 | **kernel_engineering**     | Systems      | GPU kernel optimization                                     |

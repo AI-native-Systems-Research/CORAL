@@ -6,6 +6,7 @@ import pytest
 
 from coral.config import (
     AgentConfig,
+    AgentVariant,
     CoralConfig,
     GraderConfig,
     RunConfig,
@@ -281,3 +282,100 @@ def test_warmstart_dotlist_override():
         "agents.warmstart.enabled=true",
     ])
     assert merged.agents.warmstart.enabled is True
+
+
+# --- Multi-variant config tests ---
+
+
+def test_variants_empty_falls_back_to_global():
+    config = CoralConfig(
+        task=TaskConfig(name="t", description="d"),
+        agents=AgentConfig(count=3, runtime="claude_code", model="sonnet"),
+    )
+    assert config.agents.effective_count() == 3
+    variants = config.agents.effective_variants()
+    assert len(variants) == 1
+    assert variants[0].runtime == "claude_code"
+    assert variants[0].model == "sonnet"
+    assert variants[0].count == 3
+
+
+def test_variants_effective_count():
+    config = CoralConfig(
+        task=TaskConfig(name="t", description="d"),
+        agents=AgentConfig(
+            variants=[
+                AgentVariant(runtime="claude_code", model="opus", count=2),
+                AgentVariant(runtime="codex", model="gpt-5", count=3),
+            ],
+        ),
+    )
+    assert config.agents.effective_count() == 5
+    variants = config.agents.effective_variants()
+    assert len(variants) == 2
+    assert variants[0].count == 2
+    assert variants[1].count == 3
+
+
+def test_variants_from_dict():
+    data = {
+        "task": {"name": "t", "description": "d"},
+        "agents": {
+            "variants": [
+                {"runtime": "claude_code", "model": "opus", "count": 2},
+                {"runtime": "codex", "model": "gpt-5", "count": 1},
+            ]
+        },
+    }
+    config = CoralConfig.from_dict(data)
+    assert config.agents.effective_count() == 3
+    assert config.agents.variants[0].runtime == "claude_code"
+    assert config.agents.variants[1].runtime == "codex"
+
+
+def test_variants_roundtrip():
+    config = CoralConfig(
+        task=TaskConfig(name="t", description="d"),
+        agents=AgentConfig(
+            variants=[
+                AgentVariant(runtime="claude_code", model="sonnet", count=2),
+                AgentVariant(runtime="opencode", model="openai/gpt-5", count=1),
+            ],
+        ),
+    )
+
+    with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+        config.to_yaml(f.name)
+        restored = CoralConfig.from_yaml(f.name)
+
+    assert restored.agents.effective_count() == 3
+    assert restored.agents.variants[0].runtime == "claude_code"
+    assert restored.agents.variants[1].runtime == "opencode"
+    assert restored.agents.variants[1].model == "openai/gpt-5"
+
+
+def test_variants_runtime_default_model():
+    """When variant sets runtime but not model, _preprocess fills in the default model."""
+    data = {
+        "task": {"name": "t", "description": "d"},
+        "agents": {
+            "variants": [
+                {"runtime": "bob", "count": 1},
+            ]
+        },
+    }
+    config = CoralConfig.from_dict(data)
+    assert config.agents.variants[0].model == "auto"
+
+
+def test_variants_no_count_override_backward_compat():
+    """agents.count and agents.model still work when no variants are provided."""
+    data = {
+        "task": {"name": "t", "description": "d"},
+        "agents": {"count": 4, "model": "opus"},
+    }
+    config = CoralConfig.from_dict(data)
+    assert config.agents.count == 4
+    assert config.agents.model == "opus"
+    assert config.agents.variants == []
+    assert config.agents.effective_count() == 4
