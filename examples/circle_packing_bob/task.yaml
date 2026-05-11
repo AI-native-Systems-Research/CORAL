@@ -39,10 +39,14 @@ grader:
     program_file: "initial_program.py"
 
 agents:
-  count: 4
   runtime: bob
   warmstart:
     enabled: false
+  variants:
+    - model: premium
+      count: 3
+    - model: mistral-medium-3.1
+      count: 2
 
 workspace:
   results_dir: "./results"

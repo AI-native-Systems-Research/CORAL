@@ -63,12 +63,23 @@ class WarmStartConfig:
 
 
 @dataclass
+class AgentVariant:
+    """Per-variant override for runtime/model in a multi-variant run."""
+
+    runtime: str = ""
+    model: str = ""
+    count: int = 1
+    runtime_options: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class AgentConfig:
     """Agent spawning configuration."""
 
     count: int = 1
     runtime: str = "claude_code"
     model: str = "sonnet"
+    variants: list[AgentVariant] = field(default_factory=list)
     gateway: GatewayConfig = field(default_factory=GatewayConfig)
     warmstart: WarmStartConfig = field(default_factory=WarmStartConfig)
     runtime_options: dict[str, Any] = field(default_factory=dict)
@@ -105,6 +116,15 @@ class AgentConfig:
     # Reliability: minimum runtime in seconds before an exit_code==0 is considered "clean"
     # for runtimes that lack a stable terminal marker (codex/opencode/kiro).
     min_clean_runtime_seconds: int = 60
+
+    def effective_variants(self) -> list[AgentVariant]:
+        """Return per-agent slot descriptors, falling back to the global count/runtime/model."""
+        if self.variants:
+            return self.variants
+        return [AgentVariant(runtime=self.runtime, model=self.model, count=self.count)]
+
+    def effective_count(self) -> int:
+        return sum(v.count for v in self.effective_variants())
 
     def __post_init__(self) -> None:
         # Reject negative values for the new reliability knobs;
@@ -280,6 +300,20 @@ def _preprocess(data: dict[str, Any]) -> dict[str, Any]:
         default_model = default_model_for_runtime(agents_data["runtime"])
         if default_model:
             agents_data["model"] = default_model
+
+    # Apply per-variant runtime→model defaults
+    if "variants" in agents_data:
+        from coral.agent.registry import default_model_for_runtime
+
+        normalized = []
+        for v in agents_data["variants"]:
+            v = dict(v)
+            if v.get("runtime") and not v.get("model"):
+                default_model = default_model_for_runtime(v["runtime"])
+                if default_model:
+                    v["model"] = default_model
+            normalized.append(v)
+        agents_data["variants"] = normalized
 
     data["agents"] = agents_data
 

@@ -390,8 +390,15 @@ def cmd_start(args: argparse.Namespace) -> None:
         print(f"[coral] Config:     {args.config}")
         print(f"[coral] Task:       {config.task.name}")
         print(f"[coral] Grader:     {config.grader.entrypoint or 'eval/grader.py (deprecated)'}")
-        print(f"[coral] Agents:     {config.agents.count}")
-        print(f"[coral] Model:      {config.agents.model}")
+        if config.agents.variants:
+            print(f"[coral] Agents:     {config.agents.effective_count()} (mixed variants)")
+            for v in config.agents.variants:
+                rt = v.runtime or config.agents.runtime
+                mdl = v.model or config.agents.model
+                print(f"[coral]   {v.count}x {rt} / {mdl}")
+        else:
+            print(f"[coral] Agents:     {config.agents.count}")
+            print(f"[coral] Model:      {config.agents.model}")
         print(f"[coral] Max turns:  {config.agents.max_turns}")
         print(f"[coral] Results:    {config.workspace.results_dir}")
         print(f"[coral] Repo path:  {config.workspace.repo_path}")
